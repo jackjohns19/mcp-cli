@@ -1,10 +1,15 @@
 # config.py
 import json
 import logging
+from typing import Dict, Optional, List
 from transport.stdio.stdio_server_parameters import StdioServerParameters
 
-async def load_config(config_path: str, server_name: str) -> StdioServerParameters:
-    """ Load the server configuration from a JSON file. """
+async def load_config(config_path: str, server_names: Optional[List[str]] = None) -> Dict[str, StdioServerParameters]:
+    """ 
+    Load server configurations from a JSON file.
+    If server_names is None, load all servers.
+    If server_names is a list, load only specified servers.
+    """
     try:
         # debug
         logging.debug(f"Loading config from {config_path}")
@@ -13,22 +18,39 @@ async def load_config(config_path: str, server_name: str) -> StdioServerParamete
         with open(config_path, "r") as config_file:
             config = json.load(config_file)
 
-        # Retrieve the server configuration
-        server_config = config.get("mcpServers", {}).get(server_name)
-        if not server_config:
-            error_msg = f"Server '{server_name}' not found in configuration file."
+        # Get the mcpServers configuration
+        mcp_servers = config.get("mcpServers", {})
+
+        # Determine which servers to load
+        if server_names is None:
+            # If no specific servers specified, load all servers
+            selected_servers = mcp_servers
+        else:
+            # Filter to only specified servers
+            selected_servers = {name: mcp_servers[name] for name in server_names 
+                                if name in mcp_servers}
+
+        # Validate that at least one server was found
+        if not selected_servers:
+            error_msg = "No servers found in configuration."
+            if server_names:
+                error_msg = f"Specified servers {server_names} not found in configuration."
             logging.error(error_msg)
             raise ValueError(error_msg)
 
-        # Construct the server parameters
-        result = StdioServerParameters(
-            command=server_config["command"],
-            args=server_config.get("args", []),
-            env=server_config.get("env"),
-        )
+        # Construct server parameters for each selected server
+        result = {}
+        for server_name, server_config in selected_servers.items():
+            server_params = StdioServerParameters(
+                command=server_config["command"],
+                args=server_config.get("args", []),
+                env=server_config.get("env"),
+            )
+            result[server_name] = server_params
 
-        # debug
-        logging.debug(f"Loaded config: command='{result.command}', args={result.args}, env={result.env}")
+            # debug
+            logging.debug(f"Loaded config for {server_name}: command='{server_params.command}', "
+                          f"args={server_params.args}, env={server_params.env}")
 
         # return result
         return result
